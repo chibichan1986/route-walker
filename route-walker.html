@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Route Walker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:        #f0ece4;
+  --surface:   #faf8f4;
+  --surface2:  #f0ece4;
+  --border:    rgba(0,0,0,0.08);
+  --text:      #1a1714;
+  --text-sub:  #8a8278;
+  --orange:    #e8621a;
+  --yellow:    #f0b429;
+  --shadow:    0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.06);
+  --radius:    18px;
+  --radius-sm: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+
+#map { position: fixed; inset: 0; z-index: 0; }
+.leaflet-tile { filter: sepia(18%) saturate(85%) brightness(103%); }
+.leaflet-control-zoom { display: none !important; }
+.leaflet-control-attribution { font-size: 10px; opacity: 0.5; }
+
+/* Top Bar */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 14px 16px 0;
+  display: flex; align-items: center; gap: 10px;
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.icon-circle {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--surface); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow); flex-shrink: 0; font-size: 18px;
+  transition: transform 0.15s;
+}
+.icon-circle:active { transform: scale(0.9); }
+.topbar-title {
+  flex: 1; height: 46px; background: var(--surface);
+  border-radius: 23px; box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.topbar-title .t-icon { font-size: 20px; }
+.topbar-title .t-text { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+.topbar-title .t-text em { color: var(--orange); font-style: normal; }
+
+/* Search Row */
+.searchbar-row {
+  position: fixed; top: 72px; left: 16px; right: 16px; z-index: 100;
+  display: flex; gap: 10px; pointer-events: none;
+}
+.searchbar-row > * { pointer-events: auto; }
+.searchbar {
+  flex: 1; height: 46px; border-radius: 23px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 18px; box-shadow: var(--shadow); transition: border-color 0.2s;
+}
+.searchbar:focus-within { border-color: var(--orange); }
+.searchbar input {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text);
+}
+.searchbar input::placeholder { color: var(--text-sub); }
+.s-icon { font-size: 16px; flex-shrink: 0; display: flex; align-items: center; }
+.icon-btn {
+  width: 46px; height: 46px; border-radius: 50%;
+  background: var(--surface); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow); font-size: 19px; flex-shrink: 0;
+  transition: transform 0.15s, background 0.15s;
+}
+.icon-btn:active { transform: scale(0.9); }
+.icon-btn.active { background: var(--orange); }
+
+/* Speed Panel */
+.speed-panel {
+  position: fixed; bottom: 130px; left: 16px; z-index: 100;
+  background: var(--surface); border-radius: var(--radius);
+  padding: 14px 12px 12px; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: 8px; min-width: 148px;
+}
+.speed-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 1.6px;
+  color: var(--text-sub); text-transform: uppercase; padding: 0 4px; margin-bottom: 2px;
+}
+.speed-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--surface2); border: 1.5px solid transparent;
+  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.18s;
+}
+.speed-btn .spd-e { font-size: 18px; }
+.speed-btn .spd-v { font-size: 14px; font-weight: 500; color: var(--text); }
+.speed-btn.active { background: var(--orange); border-color: var(--orange); }
+.speed-btn.active .spd-v { color: #fff; }
+
+/* Right Actions */
+.right-actions {
+  position: fixed; bottom: 130px; right: 16px; z-index: 100;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.action-btn {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--surface); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-lg); font-size: 20px;
+  transition: transform 0.15s, background 0.15s;
+}
+.action-btn:active { transform: scale(0.9); }
+.action-btn.danger { background: #fff0ec; }
+
+/* Trash Zone */
+#trashZone {
+  position: fixed; bottom: 100px; left: 50%; z-index: 200;
+  transform: translateX(-50%) scale(0);
+  width: 72px; height: 72px; border-radius: 50%;
+  background: #ff4040;
+  display: flex; align-items: center; justify-content: center; font-size: 28px;
+  box-shadow: 0 4px 28px rgba(255,64,64,0.45);
+  transition: transform 0.28s cubic-bezier(0.34,1.56,0.64,1), background 0.2s;
+  pointer-events: none;
+}
+#trashZone.visible { transform: translateX(-50%) scale(1); }
+#trashZone.hover   { background: #cc1010; transform: translateX(-50%) scale(1.16); }
+
+/* Status Bar */
+.statusbar {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+  z-index: 100; background: var(--surface); border-radius: 28px;
+  padding: 14px 0; box-shadow: var(--shadow-lg);
+  display: flex; align-items: center; min-width: 290px;
+}
+.stat-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 10px;
+}
+.stat-item:not(:last-child) { border-right: 1.5px solid var(--border); }
+.stat-val { font-size: 18px; font-weight: 600; font-family: 'DM Mono', monospace; letter-spacing: -0.5px; }
+.stat-unit { font-size: 11px; color: var(--text-sub); }
+
+/* Overlay */
+.overlay {
+  position: fixed; inset: 0; z-index: 299;
+  background: rgba(0,0,0,0.3); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.overlay.visible { opacity: 1; pointer-events: auto; }
+
+/* Side Menu */
+.sidemenu {
+  position: fixed; top: 0; right: -320px; bottom: 0; z-index: 300;
+  width: 300px; background: var(--surface);
+  border-radius: var(--radius) 0 0 var(--radius);
+  box-shadow: var(--shadow-lg);
+  transition: right 0.3s cubic-bezier(0.32,0,0.15,1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidemenu.open { right: 0; }
+.sidemenu-header {
+  padding: 24px 20px 16px; border-bottom: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sidemenu-header h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+.sidemenu-close {
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--surface2); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+.save-form {
+  padding: 14px 16px; border-bottom: 1.5px solid var(--border); display: flex; gap: 10px;
+}
+.save-input {
+  flex: 1; padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); background: var(--surface2);
+  font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text); outline: none;
+}
+.save-input:focus { border-color: var(--orange); }
+.save-btn {
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--orange); color: white; border: none;
+  font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.routes-list { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.route-item {
+  padding: 13px 14px; border-radius: var(--radius-sm);
+  background: var(--surface2); display: flex; align-items: center; gap: 12px;
+  cursor: pointer; transition: background 0.15s;
+}
+.route-item:active { background: #e8e0d4; }
+.route-icon { font-size: 20px; }
+.route-info { flex: 1; min-width: 0; }
+.route-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-meta { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+.route-del {
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: transparent; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; color: var(--text-sub);
+  transition: color 0.15s, background 0.15s;
+}
+.route-del:hover { color: #ff4040; background: #fff0ec; }
+.empty-routes { text-align: center; color: var(--text-sub); font-size: 14px; padding: 32px 20px; line-height: 1.7; }
+
+/* Toast */
+.toast {
+  position: fixed; top: 132px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 500; background: rgba(26,23,20,0.92); color: white;
+  padding: 10px 22px; border-radius: 24px;
+  font-size: 13px; font-weight: 500;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  white-space: nowrap; backdrop-filter: blur(6px);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Segment tooltip */
+.seg-tip {
+  background: white !important; border-radius: 8px !important;
+  padding: 4px 10px !important; border: none !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 12px !important; font-weight: 600 !important;
+  color: #1a1714 !important; white-space: nowrap !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.14) !important;
+}
+.seg-tip::before { display: none !important; }
+
+/* Spinner */
+.spin {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid #ddd; border-top-color: var(--orange);
+  animation: spin .7s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Route mode badge */
+.route-mode {
+  position: fixed; top: 132px; right: 16px; z-index: 100;
+  background: var(--surface); border-radius: 10px;
+  padding: 4px 10px; font-size: 11px; font-weight: 600;
+  color: var(--text-sub); box-shadow: var(--shadow);
+  opacity: 0; transition: opacity 0.3s;
+}
+.route-mode.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <button class="icon-circle" id="btnUndo">↩️</button>
+  <div class="topbar-title">
+    <span class="t-icon">🥾</span>
+    <span class="t-text"><em>Route</em> Walker</span>
+  </div>
+  <button class="icon-circle" id="btnMenu">☰</button>
+</div>
+
+<!-- Search Row -->
+<div class="searchbar-row">
+  <div class="searchbar">
+    <span class="s-icon" id="searchIcon">🔍</span>
+    <input id="searchInput" type="text" placeholder="場所を検索..." autocomplete="off">
+  </div>
+  <button class="icon-btn" id="btnVoice">🎙️</button>
+</div>
+
+<!-- Speed Panel -->
+<div class="speed-panel">
+  <div class="speed-label">WALK SPEED</div>
+  <button class="speed-btn" data-speed="3"><span class="spd-e">🐢</span><span class="spd-v">3 km/h</span></button>
+  <button class="speed-btn active" data-speed="4.8"><span class="spd-e">🚶</span><span class="spd-v">4.8 km/h</span></button>
+  <button class="speed-btn" data-speed="6"><span class="spd-e">🏃</span><span class="spd-v">6 km/h</span></button>
+</div>
+
+<!-- Right Actions -->
+<div class="right-actions">
+  <button class="action-btn" id="btnFit">🎯</button>
+  <button class="action-btn danger" id="btnClearAll">🗑️</button>
+</div>
+
+<!-- Trash Zone -->
+<div id="trashZone">🗑️</div>
+
+<!-- Status Bar -->
+<div class="statusbar">
+  <div class="stat-item"><span class="stat-val" id="statDist">0m</span><span class="stat-unit">合計距離</span></div>
+  <div class="stat-item"><span class="stat-val" id="statTime">0分</span><span class="stat-unit">所要時間</span></div>
+  <div class="stat-item"><span class="stat-val" id="statPins">0</span><span class="stat-unit">地点数</span></div>
+</div>
+
+<!-- Route mode badge -->
+<div class="route-mode" id="routeMode"></div>
+
+<!-- Overlay -->
+<div class="overlay" id="overlay"></div>
+
+<!-- Side Menu -->
+<div class="sidemenu" id="sidemenu">
+  <div class="sidemenu-header">
+    <h2>保存済みルート</h2>
+    <button class="sidemenu-close" id="btnCloseMenu">✕</button>
+  </div>
+  <div class="save-form">
+    <input class="save-input" id="routeNameInput" type="text" placeholder="ルート名を入力...">
+    <button class="save-btn" id="btnSaveRoute">保存</button>
+  </div>
+  <div class="routes-list" id="routesList"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ════════════════════════════════════════
+//  定数
+// ════════════════════════════════════════
+const OSRM_BASE     = 'https://router.project-osrm.org/route/v1/foot/';
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const PIN_COLORS    = ['#e8621a', '#f0b429']; // index偶数:orange, 奇数:yellow
+const OSRM_TIMEOUT  = 6000; // ms
+
+// ════════════════════════════════════════
+//  状態
+// ════════════════════════════════════════
+let waypoints   = [];
+// 各要素: { lat, lng, marker, segPoly, segTip, segDist, segIsEstimate }
+let walkSpeed   = 4.8;
+let savedRoutes = JSON.parse(localStorage.getItem('rw_routes') || '[]');
+let dragging    = null; // { index }
+
+// ════════════════════════════════════════
+//  地図初期化
+// ════════════════════════════════════════
+const map = L.map('map', {
+  center: [35.6812, 139.7671],
+  zoom: 15,
+  zoomControl: false,
+  attributionControl: true,
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+map.on('click', e => addWaypoint(e.latlng.lat, e.latlng.lng));
+
+// ════════════════════════════════════════
+//  ピンアイコン生成
+// ════════════════════════════════════════
+function makePinIcon(num, color) {
+  const svg = `<svg width="36" height="44" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
+    <filter id="ds${num}"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.22"/></filter>
+    <path d="M18 0C8.06 0 0 8.06 0 18C0 31.5 18 44 18 44S36 31.5 36 18C36 8.06 27.94 0 18 0Z"
+          fill="${color}" filter="url(#ds${num})"/>
+    <circle cx="18" cy="18" r="8.5" fill="white" opacity="0.93"/>
+    <text x="18" y="22.5" text-anchor="middle"
+          font-family="DM Sans,sans-serif" font-size="10.5" font-weight="700" fill="${color}">${num}</text>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [36, 44], iconAnchor: [18, 44] });
+}
+
+// ════════════════════════════════════════
+//  距離計算ユーティリティ
+// ════════════════════════════════════════
+
+// Haversine 直線距離 (m)
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2
+          + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// fetch with timeout
+function fetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(tid));
+}
+
+// ════════════════════════════════════════
+//  地点追加
+// ════════════════════════════════════════
+function addWaypoint(lat, lng) {
+  const idx    = waypoints.length;
+  const color  = PIN_COLORS[idx % 2];
+  const marker = L.marker([lat, lng], {
+    icon: makePinIcon(idx + 1, color),
+    draggable: true,
+    zIndexOffset: 100 + idx,
+  }).addTo(map);
+
+  // ドラッグ開始
+  marker.on('dragstart', () => {
+    dragging = { index: waypoints.findIndex(w => w.marker === marker) };
+    showTrash(true);
+  });
+
+  // ドラッグ中 → ゴミ箱判定
+  marker.on('drag', e => {
+    if (!dragging) return;
+    const pt      = map.latLngToContainerPoint(e.target.getLatLng());
+    const mapRect = map.getContainer().getBoundingClientRect();
+    const tr      = document.getElementById('trashZone').getBoundingClientRect();
+    const over = (pt.x + mapRect.left) >= tr.left && (pt.x + mapRect.left) <= tr.right
+              && (pt.y + mapRect.top)  >= tr.top  && (pt.y + mapRect.top)  <= tr.bottom;
+    document.getElementById('trashZone').classList.toggle('hover', over);
+  });
+
+  // ドラッグ終了
+  marker.on('dragend', async e => {
+    showTrash(false);
+    const trash = document.getElementById('trashZone');
+    const i = dragging ? dragging.index : -1;
+    dragging = null;
+
+    if (trash.classList.contains('hover')) {
+      trash.classList.remove('hover');
+      if (i >= 0) removeWaypoint(i);
+      return;
+    }
+    trash.classList.remove('hover');
+    if (i < 0) return;
+
+    const ll = e.target.getLatLng();
+    waypoints[i].lat = ll.lat;
+    waypoints[i].lng = ll.lng;
+    await rebuildAround(i);
+  });
+
+  waypoints.push({ lat, lng, marker, segPoly: null, segTip: null, segDist: 0, segIsEstimate: false });
+
+  // 前の地点との間にセグメントを描画
+  drawSegment(idx);
+}
+
+// ════════════════════════════════════════
+//  セグメント描画（OSRM → Haversineフォールバック）
+// ════════════════════════════════════════
+async function drawSegment(idx) {
+  if (idx === 0) { updateStats(); return; }
+  clearSegment(idx);
+
+  const a = waypoints[idx - 1];
+  const b = waypoints[idx];
+
+  // ── まずOSRMを試みる ──────────────────
+  let dist   = null;
+  let coords = null;
+  let isEstimate = false;
+
+  try {
+    const url = `${OSRM_BASE}${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
+    const res  = await fetchWithTimeout(url, OSRM_TIMEOUT);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.code === 'Ok' && data.routes?.[0]) {
+      dist   = data.routes[0].distance;
+      coords = data.routes[0].geometry.coordinates.map(([ln, la]) => [la, ln]);
+    } else {
+      throw new Error('no route');
+    }
+  } catch (err) {
+    // ── OSRMが使えない → Haversine直線距離にフォールバック ──
+    dist   = haversine(a.lat, a.lng, b.lat, b.lng);
+    // 徒歩係数1.3（実際の経路は直線より長い）
+    dist   = dist * 1.3;
+    coords = [[a.lat, a.lng], [b.lat, b.lng]];
+    isEstimate = true;
+  }
+
+  // ── ポリライン描画 ──────────────────────
+  const poly = L.polyline(coords, {
+    color: isEstimate ? '#aaa' : '#e8621a',
+    weight: isEstimate ? 3 : 5,
+    opacity: isEstimate ? 0.6 : 0.85,
+    dashArray: isEstimate ? '6 6' : null,
+  }).addTo(map);
+
+  // ── セグメントラベル ────────────────────
+  const tMin = dist / 1000 / walkSpeed * 60;
+  const mid  = coords[Math.floor(coords.length / 2)];
+  const label = `${fmtDist(dist)} · ${fmtTime(tMin)}${isEstimate ? ' (概算)' : ''}`;
+  const tip = L.tooltip({
+    permanent: true, direction: 'top',
+    className: 'seg-tip', offset: [0, -4],
+  }).setLatLng(mid).setContent(label).addTo(map);
+
+  waypoints[idx].segPoly       = poly;
+  waypoints[idx].segTip        = tip;
+  waypoints[idx].segDist       = dist;
+  waypoints[idx].segIsEstimate = isEstimate;
+
+  updateStats();
+  updateRouteModeBadge();
+}
+
+function clearSegment(idx) {
+  const wp = waypoints[idx];
+  if (!wp) return;
+  if (wp.segPoly) { wp.segPoly.remove(); wp.segPoly = null; }
+  if (wp.segTip)  { wp.segTip.remove();  wp.segTip  = null; }
+  wp.segDist = 0;
+  wp.segIsEstimate = false;
+}
+
+async function rebuildAround(idx) {
+  const targets = [idx, idx + 1].filter(i => i > 0 && i < waypoints.length);
+  for (const i of targets) await drawSegment(i);
+}
+
+// ════════════════════════════════════════
+//  地点削除
+// ════════════════════════════════════════
+function removeWaypoint(idx) {
+  if (idx < 0 || idx >= waypoints.length) return;
+  waypoints[idx].marker.remove();
+  clearSegment(idx);
+  waypoints.splice(idx, 1);
+
+  // ピン番号を振り直し
+  waypoints.forEach((w, i) => w.marker.setIcon(makePinIcon(i + 1, PIN_COLORS[i % 2])));
+
+  // 影響するセグメントを再描画
+  if (idx < waypoints.length) {
+    clearSegment(idx);
+    drawSegment(idx);
+  } else {
+    updateStats();
+    updateRouteModeBadge();
+  }
+}
+
+function clearAll() {
+  for (let i = 0; i < waypoints.length; i++) {
+    waypoints[i].marker.remove();
+    clearSegment(i);
+  }
+  waypoints = [];
+  updateStats();
+  updateRouteModeBadge();
+}
+
+// ════════════════════════════════════════
+//  統計表示
+// ════════════════════════════════════════
+function updateStats() {
+  const total = waypoints.reduce((s, w) => s + (w.segDist || 0), 0);
+  document.getElementById('statDist').textContent = fmtDist(total);
+  document.getElementById('statTime').textContent = fmtTime(total / 1000 / walkSpeed * 60);
+  document.getElementById('statPins').textContent = waypoints.length;
+}
+
+// 速度変更時：再fetchせずラベルだけ更新
+function recomputeTimes() {
+  waypoints.forEach((wp, i) => {
+    if (i === 0 || !wp.segTip || !wp.segDist || !wp.segPoly) return;
+    const lls = wp.segPoly.getLatLngs();
+    const mid = lls[Math.floor(lls.length / 2)];
+    const tMin = wp.segDist / 1000 / walkSpeed * 60;
+    const label = `${fmtDist(wp.segDist)} · ${fmtTime(tMin)}${wp.segIsEstimate ? ' (概算)' : ''}`;
+    wp.segTip.setLatLng(mid).setContent(label);
+  });
+  updateStats();
+}
+
+// 概算モードかどうかバッジで示す
+function updateRouteModeBadge() {
+  const badge = document.getElementById('routeMode');
+  const hasEst = waypoints.some(w => w.segIsEstimate);
+  const hasRoute = waypoints.some((w, i) => i > 0 && w.segDist > 0);
+  if (!hasRoute) { badge.classList.remove('show'); return; }
+  badge.textContent = hasEst ? '📏 概算モード' : '🗺️ 経路モード';
+  badge.classList.add('show');
+}
+
+// ════════════════════════════════════════
+//  フォーマット
+// ════════════════════════════════════════
+function fmtDist(m) {
+  if (!m || m <= 0) return '0m';
+  return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
+}
+function fmtTime(min) {
+  if (!min || min < 0.5) return '0分';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  if (h === 0) return `${m}分`;
+  return `${h}時間${m}分`;
+}
+
+// ════════════════════════════════════════
+//  ゴミ箱ゾーン
+// ════════════════════════════════════════
+function showTrash(v) {
+  document.getElementById('trashZone').classList.toggle('visible', v);
+}
+
+// ════════════════════════════════════════
+//  ジオコーディング (Nominatim)
+// ════════════════════════════════════════
+async function searchPlace(q) {
+  q = q.trim();
+  if (!q) return;
+  setSearchSpin(true);
+  try {
+    const params = new URLSearchParams({ q, format: 'json', limit: '1', 'accept-language': 'ja' });
+    const res  = await fetchWithTimeout(`${NOMINATIM_URL}?${params}`, 8000);
+    const data = await res.json();
+    if (!data.length) { showToast('場所が見つかりませんでした'); return; }
+    const { lat, lon, display_name } = data[0];
+    map.flyTo([+lat, +lon], 16, { duration: 1 });
+    addWaypoint(+lat, +lon);
+    document.getElementById('searchInput').value = '';
+    showToast(`📍 ${display_name.split(',')[0]}`);
+  } catch (e) {
+    showToast('検索できませんでした（ネットワーク確認）');
+  } finally {
+    setSearchSpin(false);
+  }
+}
+
+function setSearchSpin(on) {
+  const el = document.getElementById('searchIcon');
+  if (!el) return;
+  el.innerHTML = on
+    ? '<span class="spin"></span>'
+    : '🔍';
+}
+
+// ════════════════════════════════════════
+//  音声入力
+//  方式: interimResults=true + continuous=true
+//  最後の発話から1.2秒無音で自動検索
+// ════════════════════════════════════════
+(function initVoice() {
+  const SR  = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById('btnVoice');
+  if (!SR) { btn.style.opacity = '0.4'; btn.title = '非対応ブラウザ'; return; }
+
+  let rec       = null;
+  let active    = false;
+  let silTimer  = null;   // 1.2秒無音タイマー
+  let lastText  = '';     // 最後に認識したテキスト
+  let searched  = false;  // 同じテキストで二重検索を防ぐ
+
+  function buildRec() {
+    const r = new SR();
+    r.lang            = 'ja-JP';
+    r.interimResults  = true;   // 発話中の中間テキストを受け取る
+    r.continuous      = true;   // 自動停止しない
+
+    r.onstart = () => {
+      // マイクが実際に開いた瞬間にトースト
+      showToast('🎙️ 話してください...');
+    };
+
+    r.onresult = e => {
+      // 全resultを連結して最新テキストを作る
+      let interim = '';
+      let final   = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      const text = (final + interim).trim();
+      if (!text) return;
+
+      lastText = text;
+      searched = false;
+
+      // 検索バーにリアルタイム表示
+      document.getElementById('searchInput').value = text;
+
+      // 1.2秒タイマーをリセット
+      clearTimeout(silTimer);
+      silTimer = setTimeout(() => {
+        if (!searched && lastText) {
+          searched = true;
+          showToast(`🎙️ 「${lastText}」を検索中...`);
+          searchPlace(lastText);
+          stopVoice();
+        }
+      }, 1200);
+    };
+
+    r.onerror = err => {
+      // not-allowed: マイク権限なし
+      if (err.error === 'not-allowed') {
+        showToast('⚠️ マイクの許可が必要です');
+      } else if (err.error !== 'aborted') {
+        showToast('音声認識エラー: ' + err.error);
+      }
+      stopVoice();
+    };
+
+    r.onend = () => {
+      // continuous=trueでも環境によって自動終了する場合がある
+      // activeなら再起動して継続
+      if (active && !searched) {
+        try { r.start(); } catch(_) { stopVoice(); }
+      }
+    };
+
+    return r;
+  }
+
+  function stopVoice() {
+    active = false;
+    clearTimeout(silTimer);
+    btn.classList.remove('active');
+    btn.textContent = '🎙️';
+    if (rec) { try { rec.stop(); } catch(_) {} rec = null; }
+  }
+
+  btn.addEventListener('click', () => {
+    if (active) {
+      stopVoice();
+      return;
+    }
+    // 起動
+    active   = true;
+    lastText = '';
+    searched = false;
+    document.getElementById('searchInput').value = '';
+    btn.classList.add('active');
+    btn.textContent = '🔴';
+
+    rec = buildRec();
+    try {
+      rec.start();
+    } catch(e) {
+      showToast('マイクを起動できませんでした');
+      stopVoice();
+    }
+  });
+})();
+
+// ════════════════════════════════════════
+//  サイドメニュー
+// ════════════════════════════════════════
+function openMenu() {
+  document.getElementById('sidemenu').classList.add('open');
+  document.getElementById('overlay').classList.add('visible');
+  renderRoutesList();
+}
+function closeMenu() {
+  document.getElementById('sidemenu').classList.remove('open');
+  document.getElementById('overlay').classList.remove('visible');
+}
+
+function saveRoute() {
+  const name = document.getElementById('routeNameInput').value.trim();
+  if (!name)               { showToast('ルート名を入力してください'); return; }
+  if (waypoints.length < 2){ showToast('地点を2つ以上追加してください'); return; }
+  const total = waypoints.reduce((s, w) => s + (w.segDist || 0), 0);
+  savedRoutes.unshift({
+    id: Date.now(), name,
+    wps:  waypoints.map(w => ({ lat: w.lat, lng: w.lng })),
+    dist: total,
+    time: total / 1000 / walkSpeed * 60,
+    date: new Date().toLocaleDateString('ja-JP'),
+  });
+  localStorage.setItem('rw_routes', JSON.stringify(savedRoutes));
+  document.getElementById('routeNameInput').value = '';
+  renderRoutesList();
+  showToast(`✅ 「${name}」を保存しました`);
+}
+
+function loadRoute(r) {
+  clearAll();
+  r.wps.forEach(w => addWaypoint(w.lat, w.lng));
+  setTimeout(() => {
+    if (waypoints.length) {
+      map.fitBounds(L.featureGroup(waypoints.map(w => w.marker)).getBounds().pad(0.18));
+    }
+  }, 1000);
+  closeMenu();
+  showToast(`📂 「${r.name}」を読み込みました`);
+}
+
+function deleteRoute(id) {
+  savedRoutes = savedRoutes.filter(r => r.id !== id);
+  localStorage.setItem('rw_routes', JSON.stringify(savedRoutes));
+  renderRoutesList();
+}
+
+function renderRoutesList() {
+  const el = document.getElementById('routesList');
+  if (!savedRoutes.length) {
+    el.innerHTML = '<div class="empty-routes">保存済みルートはありません。<br>ルートを作成して保存してください。</div>';
+    return;
+  }
+  el.innerHTML = savedRoutes.map(r => `
+    <div class="route-item" onclick='loadRoute(${JSON.stringify(r).replace(/'/g, "&#39;")})'>
+      <span class="route-icon">🗺️</span>
+      <div class="route-info">
+        <div class="route-name">${r.name}</div>
+        <div class="route-meta">${fmtDist(r.dist)} · ${fmtTime(r.time)} · ${r.date}</div>
+      </div>
+      <button class="route-del" onclick="event.stopPropagation();deleteRoute(${r.id})">🗑️</button>
+    </div>`).join('');
+}
+
+// ════════════════════════════════════════
+//  フィット
+// ════════════════════════════════════════
+function fitBounds() {
+  if (!waypoints.length) return;
+  map.fitBounds(L.featureGroup(waypoints.map(w => w.marker)).getBounds().pad(0.18));
+}
+
+// ════════════════════════════════════════
+//  トースト
+// ════════════════════════════════════════
+let _toastTimer;
+function showToast(msg, ms = 2800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// ════════════════════════════════════════
+//  イベント登録
+// ════════════════════════════════════════
+document.getElementById('btnUndo').addEventListener('click', () => {
+  if (!waypoints.length) return;
+  removeWaypoint(waypoints.length - 1);
+  showToast('最後の地点を削除しました');
+});
+document.getElementById('btnClearAll').addEventListener('click', () => {
+  if (!waypoints.length) return;
+  if (confirm('全ての地点を削除しますか？')) { clearAll(); showToast('ルートをクリアしました'); }
+});
+document.getElementById('btnFit').addEventListener('click', fitBounds);
+document.getElementById('btnMenu').addEventListener('click', openMenu);
+document.getElementById('btnCloseMenu').addEventListener('click', closeMenu);
+document.getElementById('overlay').addEventListener('click', closeMenu);
+document.getElementById('btnSaveRoute').addEventListener('click', saveRoute);
+document.getElementById('routeNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveRoute(); });
+document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') searchPlace(e.target.value); });
+
+document.querySelectorAll('.speed-btn').forEach(btn =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    walkSpeed = parseFloat(btn.dataset.speed);
+    recomputeTimes();
+  })
+);
+
+renderRoutesList();
+</script>
+</body>
+</html>
